@@ -1,172 +1,174 @@
-from pathlib import Path 
+from pathlib import Path
 from typing import Literal
 
-input_text = (Path(__file__).parent / "test3.txt").read_text()
+input_text = (Path(__file__).parent / "input.txt").read_text()
 
 input_grid = [list(line) for line in input_text.splitlines()]
+
+type Direction = Literal["N", "E", "S", "W"]
+type Coordinate = tuple[int, int]
+
+directions: list[Direction] = ["N", "E", "S", "W"]
+
+
+def get_relative_coord(coord: Coordinate, direction: Direction) -> Coordinate:
+    match direction:
+        case "E":
+            return (coord[0] + 1, coord[1])
+        case "N":
+            return (coord[0], coord[1] - 1)
+        case "S":
+            return (coord[0], coord[1] + 1)
+        case "W":
+            return (coord[0] - 1, coord[1])
+
+
+def get_perpendicular_directions(direction: Direction) -> tuple[Direction, Direction]:
+    match direction:
+        case "E" | "W":
+            return ("N", "S")
+        case "N" | "S":
+            return ("E", "W")
+
 
 # Let's do some flood filling
 # Flood fill all connected elements and then change the elements to use a marker
 
-def get_region_elements(original_pos: tuple[int,int], grid: list[list[str]]) -> set[tuple[int,int]]:
-    region_coordinates: set[tuple[int,int]] = set()
+
+def get_region_elements(
+    original_pos: Coordinate, grid: list[list[str]]
+) -> set[Coordinate]:
+    region_coordinates: set[Coordinate] = set()
     original_region = grid[original_pos[1]][original_pos[0]]
-    def explore(pos: tuple[int,int]):
+
+    def explore(pos: Coordinate):
         if pos in region_coordinates:
             return
-        
+
         r = grid[pos[1]][pos[0]]
         if r != original_region:
             return
-        
+
         region_coordinates.add(pos)
-        
-        if pos[1] - 1 >= 0:
-            explore((pos[0], pos[1] - 1))
-        if pos[1] + 1 < len(grid):
-            explore((pos[0], pos[1] + 1))
-        if pos[0] - 1 >= 0:
-            explore((pos[0] - 1, pos[1]))
-        if pos[0] + 1 < len(grid[0]):
-            explore((pos[0] + 1, pos[1]))
+
+        for direction in directions:
+            new_coord = get_relative_coord(pos, direction)
+            if (
+                new_coord[0] >= 0
+                and new_coord[0] < len(grid)
+                and new_coord[1] >= 0
+                and new_coord[1] < len(grid[0])
+            ):
+                explore(new_coord)
 
     explore(original_pos)
     return region_coordinates
 
-explored_positions: set[tuple[int,int]] = set()
-region_coordinates: set[frozenset[tuple[int,int]]] = set()
-for y in range(len(input_grid)):
-    for x in range(len(input_grid[y])):
-        if (x,y) in explored_positions:
-            continue
-        coords = get_region_elements((x,y), input_grid)
-        explored_positions.update(coords)
-        region_coordinates.add(frozenset(coords))
-   
 
-def calculate_perimeter(positions: set[tuple[int,int]]) -> int:
-    calculated_coords: set[tuple[int,int]] = set()
+def get_region_coordinates_for_grid(
+    input_grid: list[list[str]],
+) -> set[frozenset[Coordinate]]:
+    explored_positions: set[Coordinate] = set()
+    region_coordinates: set[frozenset[Coordinate]] = set()
+    for y in range(len(input_grid)):
+        for x in range(len(input_grid[y])):
+            if (x, y) in explored_positions:
+                continue
+            coords = get_region_elements((x, y), input_grid)
+            explored_positions.update(coords)
+            region_coordinates.add(frozenset(coords))
+    return region_coordinates
 
-    def explore(pos: tuple[int,int]) -> int:
+
+region_coordinates = get_region_coordinates_for_grid(input_grid)
+
+
+def calculate_perimeter(positions: set[Coordinate]) -> int:
+    calculated_coords: set[Coordinate] = set()
+
+    def explore(pos: Coordinate) -> int:
         if pos in calculated_coords:
             return 0
         if pos not in positions:
             return 1
-        
+
         calculated_coords.add(pos)
-        return explore((pos[0] - 1, pos[1])) + explore((pos[0] + 1, pos[1])) + explore((pos[0], pos[1] - 1)) + explore((pos[0], pos[1] + 1))
+        return sum(
+            [explore(get_relative_coord(pos, direction)) for direction in directions]
+        )
 
     return explore(next(iter(positions)))
 
-def get_next_coord(pos: tuple[int,int], dir: Literal['N','S','E','W']):
-    match dir:
-        case 'E':
-            # south
-            return pos + (0,1)
-        case 'W':
-            # north 
-            return pos + (0, -1)
-        case 'N':
-            # east
-            return pos + (1, 0)
-        case 'S':
-            # west
-            return pos + (-1, 0)
-            
 
-price_sum = 0
-for coords in region_coordinates:
-    example_coord = next(iter(coords))
-    area = len(coords)
-    perimeter = calculate_perimeter(coords)
-    #print(f"{input_grid[example_coord[1]][example_coord[0]]} has area {area} and perimeter {perimeter}, for price {area * perimeter}")
-    price_sum += area * perimeter
-
-
-type Direction = Literal['N','S','E','W']
-type Coordinate = tuple[int,int]
-
-def calculate_num_sides(positions: set[Coordinate]) -> int:
-    explored_coordinates: set[Coordinate] = set()
-    directions = set(['N','S','E','W'])
-
-    coords_to_edges: dict[Coordinate, set[Direction]] = {}
-
-    def explore(position: tuple[int,int], previous_sides: set[Direction]) -> int:
-        if position in explored_coordinates:
-            return 0
-        explored_coordinates.add(position)
-    
-        new_sides = 0
-        existing_edge_directions: set[Direction] = set()
-        coordinates_to_recurse: set[Coordinate] = set()
-        
-        for direction in directions:
-            if direction == 'E':
-                new_coord = (position[0] + 1, position[1])
-                if new_coord not in positions:
-                    if 'E' not in previous_sides:
-                        north_directions = coords_to_edges.get((position[0], position[1] - 1), set())
-                        south_directions = coords_to_edges.get((position[0], position[1] + 1), set())
-                        if 'E' not in north_directions and 'E' not in south_directions:
-                            new_sides += 1
-                    existing_edge_directions.add('E')
-                else:
-                    coordinates_to_recurse.add(new_coord)
-            elif direction == 'N':
-                new_coord = (position[0], position[1] -1)
-                if new_coord not in positions:
-                    if 'N' not in previous_sides:
-                        east_directions = coords_to_edges.get((position[0] + 1, position[1]), set())
-                        west_directions = coords_to_edges.get((position[0] - 1, position[1]), set())
-                        if 'N' not in east_directions and 'N' not in west_directions:
-                            new_sides += 1
-                    existing_edge_directions.add('N')
-                else:
-                    coordinates_to_recurse.add(new_coord)
-            elif direction == 'S':
-                new_coord = (position[0], position[1] +1)
-                if new_coord not in positions:
-                    if 'S' not in previous_sides:
-                        east_directions = coords_to_edges.get((position[0] + 1, position[1]), set())
-                        west_directions = coords_to_edges.get((position[0] - 1, position[1]), set())
-                        if 'S' not in east_directions and 'S' not in west_directions:
-                            new_sides += 1
-                    existing_edge_directions.add('S')
-                else:
-                    coordinates_to_recurse.add(new_coord)
-            elif direction == 'W':
-                new_coord = (position[0] - 1, position[1])
-                if new_coord not in positions:
-                    if 'W' not in previous_sides:
-                        # check if north and south don't have this coord
-                        north_directions = coords_to_edges.get((position[0], position[1] - 1), set())
-                        south_directions = coords_to_edges.get((position[0], position[1] + 1), set())
-                        if 'W' not in north_directions and 'W' not in south_directions:
-                            new_sides += 1
-                    existing_edge_directions.add('W')
-                else:
-                    coordinates_to_recurse.add(new_coord)
-
-        coords_to_edges[position] = existing_edge_directions
-
-            # recurse laterally to directions not present in continue
-        for coord in coordinates_to_recurse:
-            new_sides += explore(coord, existing_edge_directions)
-        return new_sides
-                
-                
-    return explore(next(iter(positions)), set())
-
-price_sum = 0
-for coords in region_coordinates:
-    example_coord = next(iter(coords))
-    area = len(coords)
-    if input_grid[example_coord[1]][example_coord[0]] == 'B':
-        print("looking at B now")
-    num_sides = calculate_num_sides(coords)
-
-    print(f"{input_grid[example_coord[1]][example_coord[0]]} has area {area} and num_sides {num_sides}, for price {area * num_sides}")
-    price_sum += area * num_sides
-
+price_sum = sum([(len(coords) * calculate_perimeter(set(coords))) for coords in region_coordinates])
 print(price_sum)
+
+
+# Equivalent to counting corners
+def calculate_num_sides(positions: set[Coordinate], input_grid: list[list[str]]) -> int:
+    explored_coordinates: set[Coordinate] = set()
+
+    def explore(position: Coordinate) -> int:
+        corners = 0
+
+        explored_coordinates.add(position)
+        for direction_one, direction_two in zip(
+            directions, [*directions[1:], directions[0]]
+        ):
+            relative_coord_one = get_relative_coord(position, direction_one)
+            relative_coord_two = get_relative_coord(position, direction_two)
+            # If there isn't an edge in the direction, continue
+            if (
+                relative_coord_one not in positions
+                and relative_coord_two not in positions
+            ):
+                corners += 1
+
+            # Look for the other type of corner
+            corner_pos = (
+                relative_coord_one[0]
+                if relative_coord_one[0] != position[0]
+                else relative_coord_two[0],
+                relative_coord_one[1]
+                if relative_coord_one[1] != position[1]
+                else relative_coord_two[1],
+            )
+
+            if (
+                relative_coord_one in positions
+                and relative_coord_two in positions
+                and corner_pos not in positions
+            ):
+                corners += 1
+
+        for direction in directions:
+            new_coord = get_relative_coord(position, direction)
+            if new_coord not in explored_coordinates and new_coord in positions:
+                corners += explore(new_coord)
+
+        return corners
+
+    return explore(next(iter(positions)))
+
+
+def get_cost_for_file(filename: str) -> int:
+    input_text = (Path(__file__).parent / filename).read_text()
+
+    input_grid = [list(line) for line in input_text.splitlines()]
+    region_coordinates = get_region_coordinates_for_grid(input_grid)
+    price_sum = 0
+    for coords in region_coordinates:
+        area = len(coords)
+        num_sides = calculate_num_sides(set(coords), input_grid)
+        price_sum += area * num_sides
+
+    return price_sum
+
+
+assert(get_cost_for_file("test1.txt") == 80)
+assert(get_cost_for_file("test4.txt") == 236)
+assert(get_cost_for_file("test5.txt") == 368)
+assert get_cost_for_file("test2.txt") == 436
+assert(get_cost_for_file("test3.txt") == 1206)
+
+print(get_cost_for_file("input.txt"))
