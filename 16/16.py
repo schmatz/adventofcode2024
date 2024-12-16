@@ -1,8 +1,6 @@
 from pathlib import Path 
-from typing import Literal, get_args, cast
-from dataclasses import dataclass
-from collections import Counter
-import sys
+from typing import Literal, cast
+from heapq import heapify, heappop, heappush
 
 type Tile = Literal['#', '.', 'S', 'E']
 type Coordinate = tuple[int,int]
@@ -36,14 +34,16 @@ def parse_input_from_file(file: Path) -> Grid:
 
     return cast_grid
 
-def print_grid(grid: list[list[Tile]], path: list[Coordinate]):
+def print_grid(grid: list[list[Tile]], distances: dict[Coordinate, int]):
+    output_str = ''
     for y, yline in enumerate(grid):
         for x, xchar in enumerate(yline):
-            if (x, y) in path:
-                print('*', end='')
+            if (x, y) in distances:
+                output_str += f'{distances[(x,y)]:06} '
             else:
-                print(xchar, end='')
-        print()
+                output_str += xchar * 6 + ' '
+        output_str += '\n'
+    (Path(__file__).parent / "output.txt").write_text(output_str)
 
 def get_relative_coord(pos: Coordinate, movement: Movement) -> Coordinate:
     match movement:
@@ -68,12 +68,58 @@ def get_valid_moves(previousMovement: Movement) -> list[Movement]:
             return list(MOVEMENTS_SET - set(['>']))
         case 'v':
             return list(MOVEMENTS_SET - set(['^']))
-        
+
+INFINITY_VALUE = 1_000_000_000_000_000_000
+
+def dijkstras_algorithm(grid: Grid) -> int:
+    distances: dict[Coordinate, int] = {}
+
+    
+    for y, yline in enumerate(grid):
+        for x, xchar in enumerate(yline):
+            if xchar == '#':
+                continue
+            else:
+                distances[(x, y)] = INFINITY_VALUE
+
+    initial_player_position = find_char_in_grid('S', grid)
+    distances[initial_player_position] = 0
+    pq: list[tuple[int, Coordinate, Movement]] = [(0, initial_player_position, '>')]
+    heapify(pq)
+
+    visited = set()
+
+    while pq:
+        current_distance, pos, previousMovement = heappop(pq)
+        if pos in visited:
+            continue
+
+        visited.add(pos)
+
+        for movement in get_valid_moves(previousMovement):
+            next_tile_coord = get_relative_coord(pos, movement)
+
+            if next_tile_coord not in distances:
+                continue
+
+            tentative_distance = None
+            if movement == previousMovement:
+                tentative_distance = current_distance + 1
+            else:
+                tentative_distance = current_distance + 1001
+
+            if tentative_distance < distances[next_tile_coord]:
+                distances[next_tile_coord] = tentative_distance
+                heappush(pq, (tentative_distance, next_tile_coord, movement))
+
+    print_grid(grid, distances)
+    return distances[find_char_in_grid('E', grid)]
+
         
 def find_highest_scoring_route(grid: Grid) -> int:
     # Returns the minimum valid path cost after the call
     # -1 represents not possible path
-    best_known_path = 1_000_000_000_000_000
+    best_known_path = 1_000_000_000_000_000_000
     def explore(pos: Coordinate, previousMovement: Movement, path: tuple[int, list[Coordinate]]) -> int:
         nonlocal best_known_path
         pos_contents = grid[pos[1]][pos[0]]
@@ -117,19 +163,22 @@ def find_highest_scoring_route(grid: Grid) -> int:
         
         return min(possible_scores)
 
-    print_grid(grid, [])
     initial_player_position = find_char_in_grid('S', grid)
     return explore(initial_player_position, '>', (0, []))
-
-    return 0
     
 
 
 def get_answer(input_file: Path) -> int:
     score = find_highest_scoring_route(parse_input_from_file(input_file))
-    print(score)
     return score
 
-assert get_answer(Path(__file__).parent / "test1.txt") == 7036
-assert get_answer(Path(__file__).parent / "test2.txt") == 11048
-#print(get_answer(Path(__file__).parent / "input.txt"))
+def get_answer_dijkstras(input_file: Path) -> int:
+    score = dijkstras_algorithm(parse_input_from_file(input_file))
+    return score
+
+#assert get_answer(Path(__file__).parent / "test1.txt") == 7036
+#assert get_answer_dijkstras(Path(__file__).parent / "test1.txt") == 7036
+#assert get_answer(Path(__file__).parent / "test2.txt") == 11048
+#assert get_answer_dijkstras(Path(__file__).parent / "test2.txt") == 11048
+print(get_answer_dijkstras(Path(__file__).parent / "test7.txt"))
+assert(get_answer_dijkstras(Path(__file__).parent / "test7.txt") == 4013)
