@@ -173,7 +173,7 @@ def get_all_coordinates_in_shortest_path(
         if distances[(e_location, direction)] == shortest_path_dist
     ]
 
-    def explore_backwards(pos: Coordinate, previousMovement: Movement):
+    def explore_backwards(pos: Coordinate, previousMovement: Movement, currentCost: int):
         if (pos, previousMovement) in visited:
             return
         visited.add((pos, previousMovement))
@@ -190,15 +190,14 @@ def get_all_coordinates_in_shortest_path(
 
             candidate_dists[(next_tile_coord, movement)] = distances[(next_tile_coord, movement)]
         
-        min_dist = min(candidate_dists.values())
-        print(len(candidate_dists))
         for potential_move in candidate_dists:
-            if candidate_dists[potential_move] != min_dist:
+            if candidate_dists[potential_move] >= currentCost:
                 continue
-            explore_backwards(potential_move[0], potential_move[1])
+
+            explore_backwards(potential_move[0], potential_move[1], candidate_dists[potential_move])
 
     for direction in starting_directions:
-        explore_backwards(direction[0], direction[1])
+        explore_backwards(direction[0], direction[1], distances[(direction[0], direction[1])])
     visited_coords = set((coord[0] for coord in visited))
     print_grid(grid, visited_coords)
     return len(visited_coords)
@@ -275,6 +274,6 @@ def get_answer_dijkstras(input_file: Path) -> int:
 #assert get_answer(Path(__file__).parent / "test1.txt") == 7036
 assert get_answer_dijkstras(Path(__file__).parent / "test1.txt") == 7036
 #assert get_answer(Path(__file__).parent / "test2.txt") == 11048
-#assert get_answer_dijkstras(Path(__file__).parent / "test2.txt") == 11048
+assert get_answer_dijkstras(Path(__file__).parent / "test2.txt") == 11048
 #assert get_answer_dijkstras(Path(__file__).parent / "test7.txt") == 4013
-#print(get_answer_dijkstras(Path(__file__).parent / "input.txt"))
+print(get_answer_dijkstras(Path(__file__).parent / "input.txt"))
