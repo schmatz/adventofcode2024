@@ -1,3 +1,7 @@
+import time 
+from pathlib import Path
+
+
 OPCODES = {
     0b000: "adv", # Division
     0b001: "bxl", # Bitwise XOR
@@ -10,8 +14,7 @@ OPCODES = {
 }
 
 def parse_input(filename: str) -> tuple[dict[str, int], list[int]]:
-    with open(filename) as f:
-        input_text = f.read()
+    input_text = (Path(__file__).parent / filename).read_text()
 
     lines = input_text.splitlines()
     registers = {}
@@ -41,40 +44,100 @@ def do_div(registers: dict[str, int], operand: int, target_register: str):
     denominator =  2 ** resolve_combo_operand(registers, operand)
     registers[target_register] = numerator // denominator
 
+# Run one timestep, returning the new IP
+def step_forward(registers: dict[str, int], instruction_pointer: int, program: list[int], final_output: list[int]) -> int:
+    opcode = program[instruction_pointer]
+    operand = program[instruction_pointer + 1]
+
+    match OPCODES[opcode]:
+        case "adv":
+            do_div(registers, operand, "A")
+        case "bxl":
+            registers["B"] ^= operand
+        case "bst":
+            registers["B"] = resolve_combo_operand(registers, operand) % 8
+        case "jnz":
+            if registers["A"] != 0 and operand != instruction_pointer:
+                instruction_pointer = operand - 2 # because we will increment
+        case "bxc":
+            registers["B"] ^= registers["C"]
+        case "out":
+            final_output.append(resolve_combo_operand(registers, operand) % 8)
+        case "bdv":
+            do_div(registers, operand, "B")
+        case "cdv":
+            do_div(registers, operand, "C")
+        case _:
+            raise AssertionError("Invalid opcode")
+    instruction_pointer += 2
+    return instruction_pointer
+
 def run_program(filename: str) -> str:
     registers, program = parse_input(filename)
+    
 
     instruction_pointer = 0
-    final_output: list[str] = []
+    final_output: list[int] = []
     while instruction_pointer < len(program):
-        opcode = program[instruction_pointer]
-        operand = program[instruction_pointer + 1]
+        instruction_pointer = step_forward(registers, instruction_pointer, program, final_output)
 
-        match OPCODES[opcode]:
-            case "adv":
-                do_div(registers, operand, "A")
-            case "bxl":
-                registers["B"] ^= operand
-            case "bst":
-                registers["B"] = resolve_combo_operand(registers, operand) % 8
-            case "jnz":
-                if registers["A"] != 0 and operand != instruction_pointer:
-                    instruction_pointer = operand - 2 # because we will increment
-            case "bxc":
-                registers["B"] ^= registers["C"]
-            case "out":
-                final_output.append(str(resolve_combo_operand(registers, operand) % 8))
-            case "bdv":
-                do_div(registers, operand, "B")
-            case "cdv":
-                do_div(registers, operand, "C")
-            case _:
-                raise AssertionError("Invalid opcode")
-        instruction_pointer += 2
-
-    return ",".join(final_output)
+    return ",".join([str(num) for num in final_output])
 
 
+def input_program_optimized():
+    registers, program = parse_input("input.txt")
+
+    a = registers["A"] 
+
+    while True:
+        # We can make this number up
+        a_3_lower_bits = a & 7
+        a_3_lower_bits_negated = 7 - a_3_lower_bits
+
+        # This relies on the next N bits
+        a_shifted_by_a_3_lower_bits_negated = (a >> a_3_lower_bits_negated) & 7
+
+        b = a_3_lower_bits ^ a_shifted_by_a_3_lower_bits_negated
+
+        # Inverse of xor is xor itself
+
+        print(b, end=",")
+        print(b)
+        a >>= 3
+        if a == 0:
+            break
+
+
+def run_program_to_find_quine(filename: str) -> int:
+    registers, program = parse_input(filename)
+
+    program_length = len(program)
+    min_a = 8 ** program_length
+    max_a = 8 ** (program_length + 1)
+    
+    for a in range(min_a, max_a):
+        # Run optimized program
+        output_index = 0
+        while output_index < program_length:
+            if (a & 7) ^ ((a >> ((a & 7) ^ 7)) & 7) == program[output_index]:
+                output_index += 1
+            else:
+                break
+                
+            a >>= 3
+            if a == 0:
+                break
+
+        if output_index == program_length:
+            return a
+        
+        if (a & ((1 << 30) - 1)) == 0:
+            print(a)
+    
+    return -1
+            
+        
 #assert run_program("test1.txt") == "4,6,3,5,6,3,5,2,1,0"
-#assert run_program("input.txt")  == "1,4,6,1,6,4,3,0,3"
-print(run_program("test2.txt"))
+assert run_program("input.txt")  == "1,4,6,1,6,4,3,0,3"
+#print(run_program_to_find_quine("input.txt"))
+input_program_optimized()
