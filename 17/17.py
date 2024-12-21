@@ -72,7 +72,7 @@ def step_forward(registers: dict[str, int], instruction_pointer: int, program: l
     instruction_pointer += 2
     return instruction_pointer
 
-def run_program(filename: str) -> str:
+def run_program(filename: str) -> list[int]:
     registers, program = parse_input(filename)
     
 
@@ -81,31 +81,55 @@ def run_program(filename: str) -> str:
     while instruction_pointer < len(program):
         instruction_pointer = step_forward(registers, instruction_pointer, program, final_output)
 
-    return ",".join([str(num) for num in final_output])
+    return final_output
 
 
-def input_program_optimized():
-    registers, program = parse_input("input.txt")
-
-    a = registers["A"] 
-
+def input_program_optimized(registerA: int) -> list[int]:
+    a = registerA
+    output = []
     while True:
         # We can make this number up
-        a_3_lower_bits = a & 7
-        a_3_lower_bits_negated = 7 - a_3_lower_bits
+        a_3_lower_bits = a & 0b111
+        a_3_lower_bits_negated = (~a_3_lower_bits) & 0b111
 
         # This relies on the next N bits
-        a_shifted_by_a_3_lower_bits_negated = (a >> a_3_lower_bits_negated) & 7
+        a_shifted_by_a_3_lower_bits_negated = (a >> a_3_lower_bits_negated) & 0b111
 
         b = a_3_lower_bits ^ a_shifted_by_a_3_lower_bits_negated
 
         # Inverse of xor is xor itself
+        output.append(b)
 
-        print(b, end=",")
-        print(b)
         a >>= 3
         if a == 0:
             break
+
+    return output
+
+def reverse_program_search(filename: str) -> int:
+    full_program = [2,4,1,7,7,5,1,7,4,6,0,3,5,5,3,0]
+    current_number = 0b000
+
+    def find_combo(program_index: int, current_number: int) -> int:
+        if program_index == 0:
+            return current_number
+        
+        target_output = full_program[program_index:]
+
+        for i in range(0b000, 0b1000):
+            candidate_number = (current_number << 3) | i 
+
+            output = input_program_optimized(candidate_number)
+
+            if output == target_output:
+                print(f"Candidate {candidate_number:b} results in output {target_output}")
+                current_number = (current_number << 3 | i)
+                retval = find_combo(program_index - 1, current_number)
+                if retval != -1:
+                    return retval
+
+        return -1
+    return find_combo(len(full_program) - 1, current_number)
 
 
 def run_program_to_find_quine(filename: str) -> int:
@@ -138,6 +162,8 @@ def run_program_to_find_quine(filename: str) -> int:
             
         
 #assert run_program("test1.txt") == "4,6,3,5,6,3,5,2,1,0"
-assert run_program("input.txt")  == "1,4,6,1,6,4,3,0,3"
+#assert run_program("input.txt")  == "1,4,6,1,6,4,3,0,3"
+print(run_program("input.txt"))
 #print(run_program_to_find_quine("input.txt"))
-input_program_optimized()
+#input_program_optimized()
+print(reverse_program_search("input.txt"))
