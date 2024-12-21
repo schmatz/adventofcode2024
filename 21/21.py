@@ -160,7 +160,8 @@ def calculate_shortest_manual_press_sequence_length(codes: list[str], inner_robo
         shortest_seq_found = None
         shortest_robot_hand_positions: dict[int, str] = {x: "A" for x in range(inner_robot_count)}
 
-        for numeric_seq, numeric_end_position in calculate_shortest_paths_numeric_keypad(code, "A"):
+        inner_loop_paths = calculate_shortest_paths_numeric_keypad(code, "A")
+        for numeric_seq, numeric_end_position in inner_loop_paths:
             print("processing inner loop seq", numeric_seq)
             assert numeric_end_position == "A" #All input keycodes end in A
 
@@ -168,15 +169,15 @@ def calculate_shortest_manual_press_sequence_length(codes: list[str], inner_robo
                 nonlocal shortest_robot_hand_positions
                 nonlocal shortest_seq_found
 
-                print(" ".join([str(i) for i in range(robot_id)]))
+                #print(" ".join([str(i) for i in range(robot_id)]))
                 if robot_id == inner_robot_count:
+                    #print("Found seq", previous_seq)
                     if shortest_seq_found is None or len(previous_seq) < len(shortest_seq_found):
                         shortest_seq_found = previous_seq
                         shortest_robot_hand_positions = working_robot_hand_positions
                     return
-
-                for robot_seq, robot_end_pos in calculate_shortest_paths_directional_keypad(previous_seq, working_robot_hand_positions[robot_id]):
-                    
+                directional_paths = calculate_shortest_paths_directional_keypad(previous_seq, working_robot_hand_positions[robot_id])
+                for robot_seq, robot_end_pos in directional_paths:
                     working_robot_hand_positions[robot_id] = robot_end_pos
                     explore_paths(robot_id + 1, robot_seq, working_robot_hand_positions)
                     
@@ -191,14 +192,15 @@ def calculate_shortest_manual_press_sequence_length(codes: list[str], inner_robo
     return sum(
         [calculate_sequence_complexity(short_seq[0], len(short_seq[1])) for short_seq in shortest_sequences]
     )
-"""
-problem_solution = do_problem("input.txt", 2)
-print("problem solution is", problem_solution)
-assert problem_solution == 184716
+
 test1_solution = do_problem("test1.txt", 2)
 print("Test1 case is", test1_solution)
 assert test1_solution == 126384
-"""
+problem_solution = do_problem("input.txt", 2)
+print("problem solution is", problem_solution)
+assert problem_solution == 184716
+
 print("Starting crazy case")
+
 crazy_solution = do_problem("input.txt", 25)
 print("Crazy solution is", crazy_solution)
