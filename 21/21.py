@@ -1,8 +1,5 @@
 from pathlib import Path
-from typing import Literal, cast
-from heapq import heapify, heappop, heappush
-from collections import Counter
-from dataclasses import dataclass
+from itertools import permutations
 
 
 def parse_input_from_file(filename: str) -> list[str]:
@@ -107,73 +104,62 @@ DIRECTION_MOVES: dict[str, tuple[int, int]] = {
     ">": (1, 0),
 }
 
-def preprocess_paths_slow(
-    keypad_coords: dict[str, tuple[int, int]], initial_button: str, target_button: str
-) -> str:
+# We can use a heuristic to generate the shortest paths, 
+
+def get_all_shortest_paths(keypad_coords: dict[str, tuple[int,int]], initial_button: str, target_button: str) -> set[str]:
     initial_pos = keypad_coords[initial_button]
     target_pos = keypad_coords[target_button]
-    forbidden_position = keypad_coords["X"]
+    forbidden_position = keypad_coords[FORBIDDEN_MARKER]
 
-    visited: set[tuple[int, int]] = set()
-    predecessors: dict[tuple[int, int], tuple[tuple[int, int], str]] = {}
+    x_difference = target_pos[0] - initial_pos[0]
+    y_difference = target_pos[1] - initial_pos[1]
 
-    distances: dict[tuple[int, int], int] = {
-        coord: 1000 for coord in keypad_coords.values() if coord != forbidden_position
-    }
-    distances[initial_pos] = 0
-    pq: list[tuple[int, tuple[int, int]]] = [(0, initial_pos)]
-    heapify(pq)
+    manhattan_dist = abs(x_difference) + abs(y_difference)
 
-    while pq:
-        current_distance, pos = heappop(pq)
-        if pos in visited:
-            continue
-            
-        assert pos != forbidden_position
+    x_move = '>' if x_difference > 0 else '<'
+    y_move = 'v' if y_difference > 0 else '^'
 
-        visited.add(pos)
+    element_string = x_move * abs(x_difference) + y_move * abs(y_difference)
+    candidate_paths = set("".join(p) for p in permutations(element_string, r=manhattan_dist))
+    # Filter paths that move to the X coord
+    filtered_paths = set()
+    for path in candidate_paths:
+        current_coord = initial_pos
+        should_add = True
+        for move in path:
+            move_tuple = DIRECTION_MOVES[move]
+            x = current_coord[0] + move_tuple[0]
+            y = current_coord[1] + move_tuple[1]
+            if (x, y) == forbidden_position:
+                should_add = False
+                break
+            current_coord = (x,y)
+        if should_add:
+            filtered_paths.add(path)
+        
+    return filtered_paths
 
-        for direction_letter, movement_coord in DIRECTION_MOVES.items():
-            next_coord = (pos[0] + movement_coord[0], pos[1] + movement_coord[1])
-
-            if next_coord not in distances:
-                continue
-
-            assert next_coord != forbidden_position
-
-            tentative_distance = current_distance + 1
-
-            if tentative_distance < distances[next_coord]:
-                distances[next_coord] = tentative_distance
-                predecessors[next_coord] = (pos, direction_letter)
-                heappush(pq, (tentative_distance, next_coord))
-
-    example_path = ""
-    current_node = target_pos
-    while current_node in predecessors:
-        current_node, d = predecessors[current_node]
-        example_path += d
-    return example_path[::-1]
 
 
 
 PREPROCESSED_NUMERIC_PATHS = {
-    (a, b): {preprocess_paths_slow(NUMERIC_KEYPAD_COORDINATES, a, b)}
+    (a, b): get_all_shortest_paths(NUMERIC_KEYPAD_COORDINATES, a, b)
     for a in NUMERIC_KEYPAD_COORDINATES.keys()
     for b in NUMERIC_KEYPAD_COORDINATES.keys()
     if a != b and a != FORBIDDEN_MARKER and b != FORBIDDEN_MARKER
 }
 
 PREPROCESSED_DIRECTIONAL_PATHS = {
-    (a,b): {preprocess_paths_slow(DIRECTIONAL_KEYPAD_COORDINATES, a, b)}
+    (a,b): get_all_shortest_paths(DIRECTIONAL_KEYPAD_COORDINATES, a, b)
     for a in DIRECTIONAL_KEYPAD_COORDINATES.keys()
     for b in DIRECTIONAL_KEYPAD_COORDINATES.keys()
     if a != b and a != FORBIDDEN_MARKER and b != FORBIDDEN_MARKER
 }
 
 
+
 # Preprocess the n^2 route table and then just do a table lookup during the algorithm
-def calculate_numeric_example_shortest_path(
+def calculate_numeric_example_shortest_paths(
     initial_button: str, target_button: str, 
 ) -> set[str]:
     return PREPROCESSED_NUMERIC_PATHS[(initial_button, target_button)]
@@ -184,70 +170,90 @@ def calculate_directional_example_shortest_path(
     return PREPROCESSED_DIRECTIONAL_PATHS[(initial_button, target_button)]
 
 
-assert len(next(iter(calculate_numeric_example_shortest_path('A', '0')))) == 1
-assert len(next(iter(calculate_numeric_example_shortest_path('0', '2')))) == 1
-assert len(next(iter(calculate_numeric_example_shortest_path('2', '9')))) == 3
-assert len(next(iter(calculate_numeric_example_shortest_path('9', 'A')))) == 3
+assert len(next(iter(calculate_numeric_example_shortest_paths('A', '0')))) == 1
+assert len(next(iter(calculate_numeric_example_shortest_paths('0', '2')))) == 1
+assert len(next(iter(calculate_numeric_example_shortest_paths('2', '9')))) == 3
+assert len(next(iter(calculate_numeric_example_shortest_paths('9', 'A')))) == 3
 
 # Returns the path and the last position the robot was over
-def _calculate_keypad_path(code: str, initial_button: str, paths: dict[tuple[str, str], set[str]]) -> set[tuple[str, str]]:
-    example_shortest_path = ""
-    current_button = initial_button
-    for char in code:
-        if char != current_button:
-            example_shortest_path += next(iter(paths[(current_button, char)]))
-        example_shortest_path += "A"
-        current_button = char 
-    return {(example_shortest_path, current_button)}
+def _calculate_keypad_paths(code: str, initial_button: str, paths: dict[tuple[str, str], set[str]]) -> set[tuple[str, str]]:
+    possible_paths: set[tuple[str, str]] = set()
+
+    def explore(current_code: str, current_path: str, current_button: str):
+        nonlocal possible_paths
+        if len(current_code) == 0:
+            possible_paths.add((current_path, current_button))
+            return
+
+        current_char = current_code[0]
+        rest = current_code[1:]
+        if current_char != current_button:
+            candidate_paths = paths[(current_button, current_char)]
+            for path in candidate_paths:
+                explore(rest, current_path + path + "A", current_char)
+        else:
+            explore(rest, current_path + "A", current_char)
+    
+
+    explore(code, "", initial_button)
+
+    return possible_paths
 
 
-def calculate_shortest_path_numeric_keypad(code: str, initial_button: str) -> set[tuple[str,str]]:
-    return _calculate_keypad_path(code, initial_button, PREPROCESSED_NUMERIC_PATHS)
+def calculate_shortest_paths_numeric_keypad(code: str, initial_button: str) -> set[tuple[str,str]]:
+    return _calculate_keypad_paths(code, initial_button, PREPROCESSED_NUMERIC_PATHS)
 
-def calculate_shortest_path_directional_keypad(code: str, initial_button: str) -> set[tuple[str, str]]:
-    return _calculate_keypad_path(code, initial_button, PREPROCESSED_DIRECTIONAL_PATHS)
+def calculate_shortest_paths_directional_keypad(code: str, initial_button: str) -> set[tuple[str, str]]:
+    return _calculate_keypad_paths(code, initial_button, PREPROCESSED_DIRECTIONAL_PATHS)
 
-seq_029a = next(iter(calculate_shortest_path_numeric_keypad("029A", "A")))
-assert len(seq_029a[0]) == len("<A^A>^^AvvvA")
-
-# Known good
-print("Numeric Keypad seq", seq_029a)
+seq_029a = calculate_shortest_paths_numeric_keypad("029A", "A")
+good_numeric_answer = "<A^A>^^AvvvA"
+assert good_numeric_answer in {s[0] for s in seq_029a}
 
 # Needs debugging
-seq_robot_a_029a = next(iter(calculate_shortest_path_directional_keypad(seq_029a[0], "A")))
-assert len(seq_robot_a_029a[0]) == len("v<<A>>^A<A>AvA<^AA>A<vAAA>^A")
-print("ROBOT A")
-print("YOU OUTPUTTED:", seq_robot_a_029a[0])
-print("KNOWN GOOD ANSWER", "v<<A>>^A<A>AvA<^AA>A<vAAA>^A")
-seq_robot_b_029a = next(iter(calculate_shortest_path_directional_keypad(seq_robot_a_029a[0], "A")))
-print("ROBOT B")
-print("YOU OUTPUTTED:", seq_robot_b_029a[0])
-print("KNOWN GOOD ANSWER", "<vA<AA>>^AvAA<^A>A<v<A>>^AvA^A<vA>^A<v<A>^A>AAvA^A<v<A>A>^AAAvA<^A>A")
-assert len(seq_robot_b_029a[0]) == len("<vA<AA>>^AvAA<^A>A<v<A>>^AvA^A<vA>^A<v<A>^A>AAvA^A<v<A>A>^AAAvA<^A>A")
+seqs_robot_a_029a = calculate_shortest_paths_directional_keypad(good_numeric_answer, "A")
+good_a_answer = "v<<A>>^A<A>AvA<^AA>A<vAAA>^A"
+assert good_a_answer in {s[0] for s in seqs_robot_a_029a}
+
+seqs_robot_b_029a = calculate_shortest_paths_directional_keypad(good_a_answer, "A")
+good_b_answer = "<vA<AA>>^AvAA<^A>A<v<A>>^AvA^A<vA>^A<v<A>^A>AAvA^A<v<A>A>^AAAvA<^A>A"
+assert good_b_answer in {s[0] for s in seqs_robot_b_029a}
+
+
 
 def calculate_shortest_manual_press_sequence_length(codes: list[str]) -> int:
+    # These should only be updated at the end of each code
     numeric_keypad_robot_pos = "A"
     robot_a_pos = "A"
     robot_b_pos = "A"
 
     shortest_sequences = []
     for code in codes:
-        # Robot operating this one 
-        numeric_seq, numeric_keypad_pos = calculate_shortest_path_numeric_keypad(code, numeric_keypad_robot_pos)
-        assert numeric_keypad_pos == "A" #All input keycodes end in A
-        # Our two robots doing directional stuff
-        robot_a_seq, robot_a_pos = calculate_shortest_path_directional_keypad(numeric_seq, robot_a_pos)
-        robot_b_seq, robot_b_pos = calculate_shortest_path_directional_keypad(robot_a_seq, robot_b_pos)
-        # We are inputting robot b seq
-        shortest_sequences.append((code, robot_b_seq))
-        print(f"For code {code} there is the seq {robot_b_seq} with length {len(robot_b_seq)}")
+        shortest_seq_found = None
+        shortest_robot_a_pos = None
+        shortest_robot_b_pos = None
+        for numeric_seq, numeric_end_position in calculate_shortest_paths_numeric_keypad(code, numeric_keypad_robot_pos):
+            assert numeric_end_position == "A" #All input keycodes end in A
+
+            for robot_a_seq, robot_a_end_pos in calculate_shortest_paths_directional_keypad(numeric_seq, robot_a_pos):
+                for robot_b_seq, _ in calculate_shortest_paths_directional_keypad(robot_a_seq, robot_b_pos):
+                    if shortest_seq_found is None or len(robot_b_seq) < len(shortest_seq_found):
+                        shortest_seq_found = robot_b_seq
+                        shortest_robot_a_pos = robot_a_end_pos
+                        shortest_robot_b_pos = robot_b_pos
+        assert shortest_robot_a_pos is not None and shortest_robot_b_pos is not None and shortest_seq_found is not None
+        robot_a_pos = shortest_robot_a_pos
+        robot_b_pos = shortest_robot_b_pos
+                    
+        shortest_sequences.append((code, shortest_seq_found))
+        print(f"For code {code} there is the seq {shortest_seq_found} with length {len(shortest_seq_found)}")
 
     return sum(
         [calculate_sequence_complexity(short_seq[0], len(short_seq[1])) for short_seq in shortest_sequences]
     )
 
-problem_solution = do_problem("test1.txt")
+problem_solution = do_problem("input.txt")
 print("problem solution is", problem_solution)
-assert problem_solution == 126384
+assert do_problem("test1.txt") == 126384
 
 # print(do_problem("input.txt"))
