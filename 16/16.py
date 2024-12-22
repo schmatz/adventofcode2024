@@ -1,6 +1,10 @@
 from pathlib import Path
 from typing import Literal, cast
 from heapq import heapify, heappop, heappush
+from collections import defaultdict
+import colorama
+
+colorama.init()
 
 type Tile = Literal["#", ".", "S", "E"]
 type Coordinate = tuple[int, int]
@@ -27,13 +31,9 @@ def find_char_in_grid(char: Tile, grid: Grid) -> Coordinate:
 
 def parse_input_from_file(file: Path) -> Grid:
     input_raw = file.read_text()
-
     input_lines = [line.strip() for line in input_raw.splitlines()]
-
     grid = [list(line) for line in input_lines]
-
     cast_grid = cast(Grid, grid)
-
     return cast_grid
 
 
@@ -42,23 +42,29 @@ def print_grid(grid: list[list[Tile]], coords: set[Coordinate]):
     for y, yline in enumerate(grid):
         for x, xchar in enumerate(yline):
             if (x, y) in coords:
-                output_str += "O"
+                output_str += f"{colorama.Fore.RED}O{colorama.Style.RESET_ALL}"
             else:
                 output_str += xchar
         output_str += "\n"
     print(output_str)
-    #(Path(__file__).parent / "output.txt").write_text(output_str)
 
-def print_grid_cost(grid: list[list[Tile]], distances: dict[Coordinate, int]):
+
+def print_grid_cost(
+    grid: list[list[Tile]], distances: dict[Coordinate, int], coords: set[Coordinate]
+):
     output_str = ""
     for y, yline in enumerate(grid):
         for x, xchar in enumerate(yline):
             if (x, y) in distances:
-                output_str += f'{distances[(x,y)]:06} '
+                if (x, y) in coords:
+                    output_str += f"{colorama.Fore.RED}{distances[(x,y)]:06}{colorama.Style.RESET_ALL} "
+                else:
+                    output_str += f"{distances[(x,y)]:06} "
             else:
-                output_str += xchar * 6 + ' '
+                output_str += xchar * 6 + " "
         output_str += "\n"
     (Path(__file__).parent / "output.txt").write_text(output_str)
+
 
 def get_relative_coord(pos: Coordinate, movement: Movement) -> Coordinate:
     match movement:
@@ -85,25 +91,35 @@ def get_valid_moves(previousMovement: Movement) -> list[Movement]:
             return list(MOVEMENTS_SET - set([">"]))
         case "v":
             return list(MOVEMENTS_SET - set(["^"]))
-        
+
+
 def reverse_direction(mov: Movement) -> Movement:
     match mov:
         case ">":
-            return '<'
+            return "<"
         case "^":
-            return 'v'
+            return "v"
         case "<":
-            return '>'
-        case 'v':
-            return '^'
+            return ">"
+        case "v":
+            return "^"
 
 
 INFINITY_VALUE = 1_000_000_000_000_000_000
 DIRECTIONS: set[Movement] = {"^", ">", "v", "<"}
 
 
-def dijkstras_algorithm(grid: Grid) -> int:
+# Do Dijkstra's algorith, return the distances
+def dijkstras_algorithm(
+    grid: Grid,
+) -> tuple[
+    dict[tuple[Coordinate, Movement], int],
+    defaultdict[tuple[Coordinate, Movement], set[tuple[Coordinate, Movement]]],
+]:
     distances: dict[tuple[Coordinate, Movement], int] = {}
+    previous_nodes: defaultdict[
+        tuple[Coordinate, Movement], set[tuple[Coordinate, Movement]]
+    ] = defaultdict(set)
 
     for y, yline in enumerate(grid):
         for x, xchar in enumerate(yline):
@@ -142,138 +158,87 @@ def dijkstras_algorithm(grid: Grid) -> int:
             else:
                 tentative_distance = current_distance + 1000
 
-            if tentative_distance < distances[(next_tile_coord, movement)]:
+            if tentative_distance <= distances[(next_tile_coord, movement)]:
                 distances[(next_tile_coord, movement)] = tentative_distance
+                previous_nodes[(next_tile_coord, movement)].add((pos, previousMovement))
                 heappush(pq, (tentative_distance, next_tile_coord, movement))
 
-
-    print(get_all_coordinates_in_shortest_path(grid, distances))
-
-    return min(
-        [
-            distances[(find_char_in_grid("E", grid), direction)]
-            for direction in DIRECTIONS
-        ]
-    )
+    return distances, previous_nodes
 
 
-def get_all_coordinates_in_shortest_path(
-    grid: Grid, distances: dict[tuple[Coordinate, Movement], int]
+def get_num_shortest_path_coordinates_with_neighbors(
+    grid: Grid,
+    distances: dict[tuple[Coordinate, Movement], int],
+    previous_nodes: defaultdict[
+        tuple[Coordinate, Movement], set[tuple[Coordinate, Movement]]
+    ],
 ) -> int:
-    print_grid_cost(grid, {x[0]: y for x,y in distances.items()})
     e_location = find_char_in_grid("E", grid)
     shortest_path_dist = min(
         [distances[(e_location, direction)] for direction in DIRECTIONS]
     )
-    visited: set[tuple[Coordinate, Movement]] = set()
-
     starting_directions = [
         (e_location, direction)
         for direction in DIRECTIONS
         if distances[(e_location, direction)] == shortest_path_dist
     ]
 
-    def explore_backwards(pos: Coordinate, previousMovement: Movement, currentCost: int):
+    visited: set[tuple[Coordinate, Movement]] = set()
+
+    def explore_backwards(
+        pos: Coordinate, previousMovement: Movement, currentCost: int
+    ):
         if (pos, previousMovement) in visited:
             return
         visited.add((pos, previousMovement))
 
-        candidate_dists: dict[tuple[Coordinate, Movement], int] = {}
-        for movement in get_valid_moves(previousMovement):
-            if movement == previousMovement:
-                next_tile_coord = get_relative_coord(pos, reverse_direction(movement))
-            else:
-                next_tile_coord = pos
+        for coord, movement in previous_nodes[(pos, previousMovement)]:
+            explore_backwards(coord, movement, distances[(coord, movement)])
 
-            if (next_tile_coord, movement) not in distances:
-                continue
-
-            candidate_dists[(next_tile_coord, movement)] = distances[(next_tile_coord, movement)]
-        
-        for potential_move in candidate_dists:
-            if candidate_dists[potential_move] >= currentCost:
-                continue
-
-            explore_backwards(potential_move[0], potential_move[1], candidate_dists[potential_move])
-
+    assert len(starting_directions) == 1
     for direction in starting_directions:
-        explore_backwards(direction[0], direction[1], distances[(direction[0], direction[1])])
-    visited_coords = set((coord[0] for coord in visited))
+        explore_backwards(
+            direction[0], direction[1], distances[(direction[0], direction[1])]
+        )
+
+    visited_coords = set(coord[0] for coord in visited)
     print_grid(grid, visited_coords)
+
+    min_distances: dict[Coordinate, int] = {}
+    for distance_tuple, dist in distances.items():
+        if distance_tuple[0] not in min_distances:
+            min_distances[distance_tuple[0]] = dist
+        elif dist < min_distances[distance_tuple[0]]:
+            min_distances[distance_tuple[0]] = dist
+
+    print_grid_cost(grid, min_distances, visited_coords)
+
     return len(visited_coords)
 
 
-def find_highest_scoring_route(grid: Grid) -> int:
-    # Returns the minimum valid path cost after the call
-    # -1 represents not possible path
-    best_known_path = 1_000_000_000_000_000_000
-
-    def explore(
-        pos: Coordinate, previousMovement: Movement, path: tuple[int, list[Coordinate]]
-    ) -> int:
-        nonlocal best_known_path
-        pos_contents = grid[pos[1]][pos[0]]
-        if pos_contents == "E":
-            path[1].append(pos)
-            best_known_path = min(path[0], best_known_path)
-            return path[0]
-
-        if path[0] > best_known_path:
-            return -1
-
-        if pos_contents == "#":
-            return -1
-
-        local_path_copy = path[1].copy()
-
-        local_path_copy.append(pos)
-
-        possible_scores: set[int] = set()
-        for movement in get_valid_moves(previousMovement):
-            next_tile_coord = get_relative_coord(pos, movement)
-            next_tile_contents = grid[next_tile_coord[1]][next_tile_coord[0]]
-
-            if next_tile_contents == "#":
-                continue
-
-            if next_tile_coord in local_path_copy:
-                continue
-
-            if movement == previousMovement:
-                score = explore(
-                    next_tile_coord, movement, (path[0] + 1, local_path_copy)
-                )
-                if score != -1:
-                    possible_scores.add(score)
-            else:
-                score = explore(
-                    next_tile_coord, movement, (path[0] + 1000 + 1, local_path_copy)
-                )
-                if score != -1:
-                    possible_scores.add(score)
-
-        if len(possible_scores) == 0:
-            return -1
-
-        return min(possible_scores)
-
-    initial_player_position = find_char_in_grid("S", grid)
-    return explore(initial_player_position, ">", (0, []))
-
-
-def get_answer(input_file: Path) -> int:
-    score = find_highest_scoring_route(parse_input_from_file(input_file))
-    return score
-
-
 def get_answer_dijkstras(input_file: Path) -> int:
-    score = dijkstras_algorithm(parse_input_from_file(input_file))
-    return score
+    grid = parse_input_from_file(input_file)
+    dijkstras_distances, dijkstras_previous_nodes = dijkstras_algorithm(grid)
+
+    num_tiles_containing_best_path = int(
+        get_num_shortest_path_coordinates_with_neighbors(
+            grid, dijkstras_distances, dijkstras_previous_nodes
+        )
+    )
+    print(
+        "The number of tiles containing best paths is", num_tiles_containing_best_path
+    )
+
+    return min(
+        [
+            dijkstras_distances[(find_char_in_grid("E", grid), direction)]
+            for direction in DIRECTIONS
+        ]
+    )
 
 
-#assert get_answer(Path(__file__).parent / "test1.txt") == 7036
 assert get_answer_dijkstras(Path(__file__).parent / "test1.txt") == 7036
-#assert get_answer(Path(__file__).parent / "test2.txt") == 11048
 assert get_answer_dijkstras(Path(__file__).parent / "test2.txt") == 11048
-#assert get_answer_dijkstras(Path(__file__).parent / "test7.txt") == 4013
-print(get_answer_dijkstras(Path(__file__).parent / "input.txt"))
+# print(
+#    "The answer to part 1 is", get_answer_dijkstras(Path(__file__).parent / "input.txt")
+# )

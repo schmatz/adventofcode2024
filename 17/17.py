@@ -1,17 +1,17 @@
-import time 
 from pathlib import Path
 
 
 OPCODES = {
-    0b000: "adv", # Division
-    0b001: "bxl", # Bitwise XOR
-    0b010: "bst", # Combo operand modulo 8, write B
-    0b011: "jnz", # Nothing if A register is 0, otherwise sets IP to value of literal operand, if jump no increment ip
-    0b100: "bxc", # Calculate bitwise XOR of register B and register C, then store in B. Reads operand but ignores
-    0b101: "out", # Calculate the value of its combo operand modulo 8, then ouptuts that value (if multiple values, separated by commas)
-    0b110: "bdv", # Exactly like the adv instruction, but register is stored in C register
-    0b111: "cdv", # Cdv
+    0b000: "adv",  # Division
+    0b001: "bxl",  # Bitwise XOR
+    0b010: "bst",  # Combo operand modulo 8, write B
+    0b011: "jnz",  # Nothing if A register is 0, otherwise sets IP to value of literal operand, if jump no increment ip
+    0b100: "bxc",  # Calculate bitwise XOR of register B and register C, then store in B. Reads operand but ignores
+    0b101: "out",  # Calculate the value of its combo operand modulo 8, then ouptuts that value (if multiple values, separated by commas)
+    0b110: "bdv",  # Exactly like the adv instruction, but register is stored in C register
+    0b111: "cdv",  # Cdv
 }
+
 
 def parse_input(filename: str) -> tuple[dict[str, int], list[int]]:
     input_text = (Path(__file__).parent / filename).read_text()
@@ -26,7 +26,8 @@ def parse_input(filename: str) -> tuple[dict[str, int], list[int]]:
 
     return (registers, program)
 
-def resolve_combo_operand(registers: dict[str,int], combo_operand: int) -> int:
+
+def resolve_combo_operand(registers: dict[str, int], combo_operand: int) -> int:
     match combo_operand:
         case _ if combo_operand < 4:
             return combo_operand
@@ -38,14 +39,21 @@ def resolve_combo_operand(registers: dict[str,int], combo_operand: int) -> int:
             return registers["C"]
         case _:
             raise AssertionError("Shouldn't happen with combo operand")
-            
+
+
 def do_div(registers: dict[str, int], operand: int, target_register: str):
     numerator = registers["A"]
-    denominator =  2 ** resolve_combo_operand(registers, operand)
+    denominator = 2 ** resolve_combo_operand(registers, operand)
     registers[target_register] = numerator // denominator
 
+
 # Run one timestep, returning the new IP
-def step_forward(registers: dict[str, int], instruction_pointer: int, program: list[int], final_output: list[int]) -> int:
+def step_forward(
+    registers: dict[str, int],
+    instruction_pointer: int,
+    program: list[int],
+    final_output: list[int],
+) -> int:
     opcode = program[instruction_pointer]
     operand = program[instruction_pointer + 1]
 
@@ -58,7 +66,7 @@ def step_forward(registers: dict[str, int], instruction_pointer: int, program: l
             registers["B"] = resolve_combo_operand(registers, operand) % 8
         case "jnz":
             if registers["A"] != 0 and operand != instruction_pointer:
-                instruction_pointer = operand - 2 # because we will increment
+                instruction_pointer = operand - 2  # because we will increment
         case "bxc":
             registers["B"] ^= registers["C"]
         case "out":
@@ -72,98 +80,90 @@ def step_forward(registers: dict[str, int], instruction_pointer: int, program: l
     instruction_pointer += 2
     return instruction_pointer
 
+
 def run_program(filename: str) -> list[int]:
     registers, program = parse_input(filename)
-    
 
     instruction_pointer = 0
     final_output: list[int] = []
     while instruction_pointer < len(program):
-        instruction_pointer = step_forward(registers, instruction_pointer, program, final_output)
+        instruction_pointer = step_forward(
+            registers, instruction_pointer, program, final_output
+        )
 
     return final_output
 
 
-def input_program_optimized(registerA: int) -> list[int]:
-    a = registerA
+def input_program_optimized_simple(a: int) -> list[int]:
     output = []
     while True:
-        # We can make this number up
-        a_3_lower_bits = a & 0b111
-        a_3_lower_bits_negated = (~a_3_lower_bits) & 0b111
+        b = a & 0b111  # B = A % 8
+        b = b ^ 0b111  # B = B ^ 7
+        c = a >> b  # C = A // (2 ** B) or A >> B
+        b = b ^ 0b111  # B = B ^ 7
+        b = b ^ c  # B = B ^ C
+        output.append(b & 0b111)  # output(B % 8)
+        a = a >> 3  # A = A >> 3
 
-        # This relies on the next N bits
-        a_shifted_by_a_3_lower_bits_negated = (a >> a_3_lower_bits_negated) & 0b111
-
-        b = a_3_lower_bits ^ a_shifted_by_a_3_lower_bits_negated
-
-        # Inverse of xor is xor itself
-        output.append(b)
-
-        a >>= 3
         if a == 0:
             break
-
     return output
 
-def reverse_program_search(filename: str) -> int:
-    full_program = [2,4,1,7,7,5,1,7,4,6,0,3,5,5,3,0]
-    current_number = 0b000
 
-    def find_combo(program_index: int, current_number: int) -> int:
-        if program_index == 0:
-            return current_number
-        
-        target_output = full_program[program_index:]
+FULL_TARGET_PROGRAM = [2, 4, 1, 7, 7, 5, 1, 7, 4, 6, 0, 3, 5, 5, 3, 0]
 
+
+# Find *every* program that outputs the target [0]
+# for each one of those, find every one that outputs the target [3,0]
+# For everyone one of those, find every one that outputs [5,3,0]
+def quine_program_search() -> set[int]:
+    def find_register_a(target_output: list[int], a_prefix: int) -> set[int]:
+        working_additions: set[int] = set()
         for i in range(0b000, 0b1000):
-            candidate_number = (current_number << 3) | i 
+            a = (a_prefix << 3) | i
 
-            output = input_program_optimized(candidate_number)
+            actual_output = input_program_optimized_simple(a)
 
-            if output == target_output:
-                print(f"Candidate {candidate_number:b} results in output {target_output}")
-                current_number = (current_number << 3 | i)
-                retval = find_combo(program_index - 1, current_number)
-                if retval != -1:
-                    return retval
+            if actual_output == target_output:
+                working_additions.add(i)
 
-        return -1
-    return find_combo(len(full_program) - 1, current_number)
+        if target_output == FULL_TARGET_PROGRAM:
+            return {a_prefix << 3 | num for num in working_additions}
+
+        final_set = set()
+        for num in working_additions:
+            expanded_numbers = find_register_a(
+                FULL_TARGET_PROGRAM[
+                    len(FULL_TARGET_PROGRAM) - len(target_output) - 1 :
+                ],
+                (a_prefix << 3) | num,
+            )
+            if expanded_numbers:
+                print(
+                    "Found expanded numbers",
+                    expanded_numbers,
+                    "for output",
+                    target_output,
+                )
+            final_set.update(expanded_numbers)
+
+        return final_set
+
+    return find_register_a([0], 0b000)
 
 
-def run_program_to_find_quine(filename: str) -> int:
-    registers, program = parse_input(filename)
+assert run_program("test1.txt") == [4, 6, 3, 5, 6, 3, 5, 2, 1, 0]
+input_program_good_output = [1, 4, 6, 1, 6, 4, 3, 0, 3]
+assert run_program("input.txt") == input_program_good_output
+assert input_program_optimized_simple(66245665) == input_program_good_output
+assert input_program_optimized_simple(0b111010110000000000) == [0, 3, 5, 5, 3, 0]
 
-    program_length = len(program)
-    min_a = 8 ** program_length
-    max_a = 8 ** (program_length + 1)
-    
-    for a in range(min_a, max_a):
-        # Run optimized program
-        output_index = 0
-        while output_index < program_length:
-            if (a & 7) ^ ((a >> ((a & 7) ^ 7)) & 7) == program[output_index]:
-                output_index += 1
-            else:
-                break
-                
-            a >>= 3
-            if a == 0:
-                break
+### Now that we have deduced we have understood the program, let's search for the golden quine output
+candidate_numbers = quine_program_search()
+for candidate_number in candidate_numbers:
+    program_output = input_program_optimized_simple(candidate_number)
+    assert program_output == FULL_TARGET_PROGRAM
 
-        if output_index == program_length:
-            return a
-        
-        if (a & ((1 << 30) - 1)) == 0:
-            print(a)
-    
-    return -1
-            
-        
-#assert run_program("test1.txt") == "4,6,3,5,6,3,5,2,1,0"
-#assert run_program("input.txt")  == "1,4,6,1,6,4,3,0,3"
-print(run_program("input.txt"))
-#print(run_program_to_find_quine("input.txt"))
-#input_program_optimized()
-print(reverse_program_search("input.txt"))
+
+# assert program_output == FULL_TARGET_PROGRAM
+print("Got it!", min(candidate_numbers))

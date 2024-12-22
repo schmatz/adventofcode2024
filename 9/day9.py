@@ -1,4 +1,4 @@
-from pathlib import Path 
+from pathlib import Path
 
 input_text = (Path(__file__).parent / "input.txt").read_text()
 
@@ -29,14 +29,17 @@ for i in range(len(expanded_disk_map)):
         continue
 
     if expanded_disk_map[rightmost_file_index] == FREE_SPACE_MARKER:
-        for j in reversed(range(i+1, rightmost_file_index + 1)):
+        for j in reversed(range(i + 1, rightmost_file_index + 1)):
             if expanded_disk_map[j] != FREE_SPACE_MARKER:
                 rightmost_file_index = j
                 break
         else:
             break
-    
-    expanded_disk_map[i], expanded_disk_map[rightmost_file_index] = expanded_disk_map[rightmost_file_index], expanded_disk_map[i]
+
+    expanded_disk_map[i], expanded_disk_map[rightmost_file_index] = (
+        expanded_disk_map[rightmost_file_index],
+        expanded_disk_map[i],
+    )
 
 checksum = 0
 for i in range(len(expanded_disk_map)):
@@ -44,10 +47,13 @@ for i in range(len(expanded_disk_map)):
         continue
     checksum += i * int(expanded_disk_map[i])
 print(checksum)
-    
+
 defragged_ids: set[int] = set()
 
-def unfragment_one_file(disk_map:list[tuple[int, int]], defragmented_file_ids: set[int]) -> bool:
+
+def unfragment_one_file(
+    disk_map: list[tuple[int, int]], defragmented_file_ids: set[int]
+) -> bool:
     # Now do a defragmentation of the unfragmented disk map
     for i in reversed(range(len(disk_map))):
         fragment = disk_map[i]
@@ -60,17 +66,21 @@ def unfragment_one_file(disk_map:list[tuple[int, int]], defragmented_file_ids: s
             free_space_fragment = disk_map[j]
             free_space_fragment_id = free_space_fragment[0]
             free_space_fragment_size = free_space_fragment[1]
-            if free_space_fragment_id != FREE_SPACE_MARKER or free_space_fragment_size < fragment_size:
+            if (
+                free_space_fragment_id != FREE_SPACE_MARKER
+                or free_space_fragment_size < fragment_size
+            ):
                 continue
-        
+
             disk_map[i], disk_map[j] = (FREE_SPACE_MARKER, fragment_size), fragment
             size_differential = free_space_fragment_size - fragment_size
             if size_differential > 0:
-                disk_map.insert(j +1, (FREE_SPACE_MARKER, size_differential))
+                disk_map.insert(j + 1, (FREE_SPACE_MARKER, size_differential))
             defragmented_file_ids.add(fragment_id)
             return False
 
-    return True        
+    return True
+
 
 # Jank but whatever
 while True:
@@ -89,7 +99,10 @@ for elem in unfragmented_disk_map:
             current_free_space_span = (FREE_SPACE_MARKER, 0)
         final_disk_map.append(elem)
     else:
-        current_free_space_span = (FREE_SPACE_MARKER, current_free_space_span[1] + elem[1])
+        current_free_space_span = (
+            FREE_SPACE_MARKER,
+            current_free_space_span[1] + elem[1],
+        )
 
 if current_free_space_span[1] != 0:
     final_disk_map.append(current_free_space_span)
@@ -107,5 +120,3 @@ for i in range(len(final_disk_map)):
         checksum += (current_index + j) * block_id
     current_index += block_size
 print(checksum)
-
-

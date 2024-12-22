@@ -100,7 +100,9 @@ def calculate_perimeter(positions: set[Coordinate]) -> int:
     return explore(next(iter(positions)))
 
 
-price_sum = sum([(len(coords) * calculate_perimeter(set(coords))) for coords in region_coordinates])
+price_sum = sum(
+    [(len(coords) * calculate_perimeter(set(coords))) for coords in region_coordinates]
+)
 print(price_sum)
 
 
@@ -165,10 +167,10 @@ def get_cost_for_file(filename: str) -> int:
     return price_sum
 
 
-assert(get_cost_for_file("test1.txt") == 80)
-assert(get_cost_for_file("test4.txt") == 236)
-assert(get_cost_for_file("test5.txt") == 368)
+assert get_cost_for_file("test1.txt") == 80
+assert get_cost_for_file("test4.txt") == 236
+assert get_cost_for_file("test5.txt") == 368
 assert get_cost_for_file("test2.txt") == 436
-assert(get_cost_for_file("test3.txt") == 1206)
+assert get_cost_for_file("test3.txt") == 1206
 
 print(get_cost_for_file("input.txt"))
