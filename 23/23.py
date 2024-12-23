@@ -3,7 +3,6 @@ from itertools import permutations
 from functools import cache
 from typing import Literal, cast
 from collections import deque, defaultdict, Counter
-import networkx as nx
 
 
 def find_networks_of_three(
@@ -24,14 +23,20 @@ def find_networks_of_three(
 
 
 def find_largest_graph_clique(connections: dict[str, set[str]]) -> set[str]:
-    G = nx.Graph()
-    for computer_id, connected_computers in connections.items():
-        G.add_node(computer_id)
-        for connected_computer in connected_computers:
-            G.add_edge(computer_id, connected_computer)
+    def bron_kerbosch(R: set[str], P: set[str], X: set[str]) -> list[set[str]]:
+        cliques = []
+        if not P and not X:
+            return [R]
+        for v in P:
+            cliques.extend(
+                bron_kerbosch(R | {v}, P & connections[v], X & connections[v])
+            )
+            P = P - {v}
+            X = X | {v}
+        return cliques
 
-    largest_clique = max(nx.find_cliques(G), key=len)
-    return set(largest_clique)
+    cliques = bron_kerbosch(set(), set(connections.keys()), set())
+    return max(cliques, key=len)
 
 
 def do_problem(filename: str) -> int:
