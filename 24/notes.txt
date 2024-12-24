@@ -1,2 +1,1 @@
-1. Swap z12 and kwb
-2. 
+Got close enough with a script that checks and then just manually did it rather than debugging why my computation graph checker is wrong
